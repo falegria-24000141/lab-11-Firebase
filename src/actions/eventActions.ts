@@ -162,6 +162,7 @@ export async function createEventAction(
   // Esto fuerza a Next.js a regenerar las páginas que muestran eventos
   revalidatePath('/events');
   revalidatePath('/');
+  revalidatePath('/my-events');
 
   // Redirigimos al detalle del evento creado
   redirect(`/events/${event.id}`);
@@ -274,6 +275,7 @@ export async function updateEventAction(
   revalidatePath('/events');
   revalidatePath(`/events/${id}`);
   revalidatePath('/');
+  revalidatePath('/my-events');
 
   return {
     success: true,
@@ -317,8 +319,12 @@ export async function deleteEventAction(id: string): Promise<FormState> {
 
   revalidatePath('/events');
   revalidatePath('/');
+  revalidatePath('/my-events');
 
-  redirect('/events');
+  return {
+    success: true,
+    message: 'Evento eliminado correctamente'
+  };
 }
 
 // =============================================================================
@@ -353,6 +359,7 @@ export async function registerForEventAction(id: string): Promise<FormState> {
     }
 
     revalidatePath(`/events/${id}`);
+    revalidatePath('/my-events');
 
     return {
       success: true,
