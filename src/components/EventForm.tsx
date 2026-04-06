@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { createEventAction, updateEventAction } from '@/actions/eventActions';
-import { generateEventDetailsAction, generateEventPosterAction } from '@/actions/aiActions';
+import { generateEventPosterAction, generateDescriptionVariants } from '@/actions/aiActions';
 import { EVENT_CATEGORIES, EVENT_STATUSES, CATEGORY_LABELS, STATUS_LABELS } from '@/types/event';
 import type { FormState, Event } from '@/types/event';
 import { Sparkles } from 'lucide-react';
@@ -35,7 +35,7 @@ const initialState: FormState = {
   message: '',
 };
 
-function MagicGenerateButton({ onGenerate, onStart, onEnd }: { onGenerate: (data: any) => void, onStart: () => void, onEnd: () => void }) {
+function MagicGenerateButton({ onGenerate, onStart, onEnd, tone }: { onGenerate: (data: any) => void, onStart: () => void, onEnd: () => void, tone: any }) {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const handleGenerate = async () => {
@@ -51,16 +51,19 @@ function MagicGenerateButton({ onGenerate, onStart, onEnd }: { onGenerate: (data
       return;
     }
 
+    const categorySelect = document.querySelector('[name="category"]') as HTMLSelectElement;
+    const category = categorySelect?.value || 'general';
+
     setIsGenerating(true);
     onStart();
     try {
-      const result = await generateEventDetailsAction(title);
+      const result = await generateDescriptionVariants(title, category, tone);
 
-      if (result.success && result.data) {
-        onGenerate(result.data);
+      if (result.success && result.variants) {
+        onGenerate(result.variants);
         toast({
-          title: "✨ Magia Generada",
-          description: "Se han completado los detalles con ayuda de Gemini AI.",
+          title: "Contenido generado",
+          description: "Selecciona la mejor opción",
         });
       } else {
         toast({
@@ -104,7 +107,6 @@ function PosterGenerator({ onImageGenerated, onStart, onEnd }: { onImageGenerate
     const descInput = document.getElementById('description') as HTMLTextAreaElement;
     const tagsInput = document.getElementById('tags') as HTMLInputElement;
 
-    // Use current values if available, otherwise just title + optional desc + tags
     const prompt = `Title: ${titleInput?.value || ''}. Description: ${descInput?.value ? descInput.value.slice(0, 100) : ''}. Tags: ${tagsInput?.value || ''}`;
 
     if (!prompt || prompt.length < 5) {
@@ -117,7 +119,6 @@ function PosterGenerator({ onImageGenerated, onStart, onEnd }: { onImageGenerate
     }
 
     setIsGenerating(true);
-    // Optionally block UI here too if desired, but sticking to requested blocking on text generation
     if (onStart) onStart();
 
     try {
@@ -126,7 +127,7 @@ function PosterGenerator({ onImageGenerated, onStart, onEnd }: { onImageGenerate
       if (result.success && result.imageUrl) {
         onImageGenerated(result.imageUrl);
         toast({
-          title: "🎨 Poster Generado",
+          title: "Poster generado",
           description: "Se ha generado y subido un nuevo poster.",
         });
       } else {
@@ -201,7 +202,9 @@ export function EventForm({ event, mode = 'create' }: EventFormProps) {
   const isEditing = mode === 'edit' && !!event;
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [isPosterGenerating, setIsPosterGenerating] = useState(false);
-  const { user } = useAuth(); // Import useAuth from context
+  const [variants, setVariants] = useState<string[]>([]);
+  const [tone, setTone] = useState<'formal' | 'casual' | 'emocional' | 'corporativo'>('casual');
+  const { user } = useAuth();
   const router = useRouter();
 
   const action = isEditing
@@ -210,7 +213,6 @@ export function EventForm({ event, mode = 'create' }: EventFormProps) {
 
   const [state, formAction] = useActionState(action, initialState);
 
-  // Helper to get default value from state payload (if error) or initial event
   const getDefault = (key: string, fallback: any = '') => {
     if (state.payload && state.payload[key] !== undefined) {
       return state.payload[key];
@@ -226,7 +228,6 @@ export function EventForm({ event, mode = 'create' }: EventFormProps) {
       });
 
       if (isEditing && event) {
-        // Redirect to detail page after a short delay to let toast show
         const timer = setTimeout(() => {
           router.push(`/events/${event.id}`);
         }, 1500);
@@ -269,19 +270,31 @@ export function EventForm({ event, mode = 'create' }: EventFormProps) {
                 />
                 {!isEditing && (
                   <MagicGenerateButton
+                    tone={tone}
                     onStart={() => setIsAiGenerating(true)}
                     onEnd={() => setIsAiGenerating(false)}
-                    onGenerate={(data) => {
-                      const descInput = document.getElementById('description') as HTMLTextAreaElement;
-                      if (descInput) descInput.value = data.description;
-
-                      const tagsInput = document.getElementById('tags') as HTMLInputElement;
-                      if (tagsInput) tagsInput.value = data.tags.join(', ');
+                    onGenerate={(variants) => {
+                      setVariants(variants);
                     }}
                   />
                 )}
               </div>
               <FieldError errors={state.errors?.title} />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Tono de la descripción</Label>
+              <Select value={tone} onValueChange={(val) => setTone(val as any)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona tono" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="formal">Formal</SelectItem>
+                  <SelectItem value="casual">Casual</SelectItem>
+                  <SelectItem value="emocional">Emocional</SelectItem>
+                  <SelectItem value="corporativo">Corporativo</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
@@ -298,6 +311,24 @@ export function EventForm({ event, mode = 'create' }: EventFormProps) {
               />
               <FieldError errors={state.errors?.description} />
             </div>
+
+            {variants.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Selecciona una descripción:</p>
+                {variants.map((variant, i) => (
+                  <div
+                    key={i}
+                    className="p-3 border rounded cursor-pointer hover:bg-muted transition"
+                    onClick={() => {
+                      const descInput = document.getElementById('description') as HTMLTextAreaElement;
+                      if (descInput) descInput.value = variant;
+                    }}
+                  >
+                    {variant}
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
@@ -463,7 +494,6 @@ export function EventForm({ event, mode = 'create' }: EventFormProps) {
             </div>
           </div>
 
-          {/* Hidden fields for organizer info, automatically populated */}
           <input type="hidden" name="organizerName" value={getDefault('organizerName', user?.displayName || 'Anónimo')} />
           <input type="hidden" name="organizerEmail" value={getDefault('organizerEmail', user?.email || '')} />
           {state.errors?.organizerName && <FieldError errors={state.errors.organizerName} />}

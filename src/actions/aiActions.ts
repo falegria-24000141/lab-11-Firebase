@@ -21,20 +21,20 @@
 // │                                                                          │
 // │   1. Usuario escribe título ────────────────────────────────────────┐    │
 // │      "Conferencia de React 2025"                                    │    │
-// │                                                                     │    │
+// │                                                                     │
 // │   2. Click "Generar con IA" ────────────────────────────────────────┤    │
-// │                                                                     │    │
+// │                                                                     │
 // │   3. EventForm llama generateEventDetailsAction(title) ─────────────┤    │
 // │      (Server Action, ejecuta en el servidor)                        │    │
-// │                                                                     │    │
+// │                                                                     │
 // │   4. Server Action construye prompt ────────────────────────────────┤    │
 // │      + Envía a Gemini API                                           │    │
-// │                                                                     │    │
+// │                                                                     │
 // │   5. Gemini retorna JSON ───────────────────────────────────────────┤    │
 // │      { description, category, tags }                                │    │
-// │                                                                     │    │
+// │                                                                     │
 // │   6. Server Action parsea y valida ─────────────────────────────────┤    │
-// │                                                                     │    │
+// │                                                                     │
 // │   7. Retorna datos al cliente ──────────────────────────────────────┘    │
 // │      EventForm actualiza campos automáticamente                          │
 // │                                                                          │
@@ -66,73 +66,77 @@ export interface GeneratedEventDetails {
     tags: string[];
 }
 
-export async function generateEventDetailsAction(title: string): Promise<{ success: boolean; data?: GeneratedEventDetails; error?: string }> {
-    try {
-        if (!process.env.GEMINI_API_KEY) {
-            throw new Error('GEMINI_API_KEY is not configured');
-        }
+// 🔧 FIX: tipos faltantes
+type Tone = 'formal' | 'casual' | 'emocional' | 'corporativo';
 
-        if (!title || title.length < 3) {
-            return { success: false, error: 'Please provide a valid event title' };
-        }
+interface AIVariantsResponse {
+    variants: string[];
+}
 
-        const client = getGeminiClient();
+export async function generateDescriptionVariants(
+  title: string, 
+  category: string, 
+  tone: Tone
+): Promise<{ success: boolean; variants?: string[]; error?: string }> {
+  
+  if (!title || title.length < 3) {
+    return { success: false, error: 'El título es demasiado corto.' };
+  }
 
-        const prompt = `
-      You are an expert event planner. Based on the event title "${title}", please generate:
-      1. A compelling and engaging description (2-3 paragraphs, MUST be under 1000 characters).
-      2. The most suitable category from this list: ${EVENT_CATEGORIES.join(', ')}.
-      3. A list of 5 relevant tags (lowercase, concise).
+  try {
+    // 🔧 FIX: usar client en lugar de función inexistente
+    const client = getGeminiClient();
+    
+    const prompt = `
+      Eres un experto en copy de marketing para eventos.
+      Genera 3 variantes de descripción para el evento: "${title}" de la categoría "${category}".
+      El tono de voz debe ser: ${tone}.
+      Cada descripción debe ser persuasiva y tener menos de 500 caracteres.
 
-      Return the response in strictly valid JSON format with this structure:
+      Responde ESTRICTAMENTE en este formato JSON:
       {
-        "description": "string",
-        "category": "string",
-        "tags": ["tag1", "tag2"]
+        "variants": ["descripción 1", "descripción 2", "descripción 3"]
       }
-      Do not include any markdown formatting or explanations, just the JSON string.
     `;
 
-        // The new SDK syntax might differ, but assuming standardized usage:
-        // client.models.generateContent({ model: 'model-name', contents: ... })
-        const result = await client.models.generateContent({
-            model: GEMINI_MODELS.TEXT,
-            contents: [
-                {
-                    role: 'user',
-                    parts: [{ text: prompt }]
-                }
-            ],
-            config: {
-                responseMimeType: 'application/json'
-            }
-        });
-
-        const text = result.text;
-
-        if (!text) {
-            throw new Error('No content generated');
+    const result = await client.models.generateContent({
+      model: GEMINI_MODELS.TEXT,
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: prompt }]
         }
+      ],
+    });
 
-        // Clean up markdown code blocks if present (common in LLM responses)
-        // Even with JSON mode, sometimes it might add wrapping
-        const cleanedText = text.replace(/```json\n?|\n?```/g, '').trim();
+    const responseText = result.text || '';
 
-        const data = JSON.parse(cleanedText) as GeneratedEventDetails;
+    if (!responseText) {
+  return { success: false, error: 'La IA no devolvió contenido.' };
+}
+    
+    let data: AIVariantsResponse;
 
-        // Validate category
-        if (!EVENT_CATEGORIES.includes(data.category as any)) {
-            data.category = 'otro';
-        }
-
-        // Limit tags to 5
-        data.tags = (data.tags || []).slice(0, 5);
-
-        return { success: true, data };
-    } catch (error) {
-        console.error('Gemini API Error:', error);
-        return { success: false, error: 'Failed to generate content. Please try again.' };
+    try {
+      const clean = responseText.replace(/```json|```/g, '').trim();
+      data = JSON.parse(clean);
+    } catch {
+      return { success: false, error: 'Respuesta inválida de la IA.' };
     }
+
+    if (!Array.isArray(data.variants) || data.variants.length !== 3) {
+    return { success: false, error: 'La IA no generó exactamente 3 variantes.' };
+}
+    
+    return { 
+      success: true, 
+      variants: data.variants 
+    };
+
+  } catch (error) {
+    console.error('Error en AI Action:', error);
+    return { success: false, error: 'No se pudieron generar las sugerencias.' };
+  }
 }
 
 export async function generateEventPosterAction(prompt: string, eventId?: string): Promise<{ success: boolean; imageUrl?: string; error?: string }> {
@@ -154,25 +158,20 @@ export async function generateEventPosterAction(prompt: string, eventId?: string
             ],
         });
 
-        // Extract base64
-        // According to context7 docs for gemini-3-pro-image-preview:
-        // response.candidates[0].content.parts[0].inlineData.data
-        const candidates = result.candidates; // Access property directly
-        const part = candidates?.[0]?.content?.parts?.[0];
+        const candidates = result.candidates;
+        const parts = candidates?.[0]?.content?.parts || [];
 
-        let base64Image: string | undefined;
+        //  buscar imagen correctamente
+        const imagePart = parts.find(p => p.inlineData?.data);
 
-        if (part?.inlineData?.data) {
-            base64Image = part.inlineData.data;
-        } else {
-            console.error('No inlineData in response:', JSON.stringify(part));
+        if (!imagePart?.inlineData?.data) {
+            console.error('No inlineData in response:', JSON.stringify(parts));
             throw new Error('No image generated');
         }
 
-        const buffer = Buffer.from(base64Image, 'base64');
+        const buffer = Buffer.from(imagePart.inlineData.data, 'base64');
 
         // Upload to storage
-        // If no eventId, generate a temporary one
         const targetId = eventId || crypto.randomUUID();
 
         const { uploadPosterToStorage } = await import('@/lib/firebase/storage');
