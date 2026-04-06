@@ -1,15 +1,11 @@
 // =============================================================================
-// PÁGINA DE EVENTOS - Module 4: Event Pass
+// PÁGINA DE MIS EVENTOS - Module 4: Event Pass
 // =============================================================================
-// Lista de eventos con filtros usando searchParams.
+// Lista de eventos creados por el usuario autenticado.
 //
-// ## searchParams en Server Components
-// Next.js pasa los query params como prop a las páginas.
-// Esto permite filtrar datos en el servidor sin JavaScript del cliente.
-//
-// ## Dynamic Rendering
-// Esta página usa dynamic rendering porque depende de searchParams.
-// Next.js detecta esto automáticamente.
+// ## Server Components y Autenticación
+// Se verifica la cookie de sesión directamente en el servidor antes de
+// renderizar la página, redirigiendo a /auth si no hay un token válido.
 // =============================================================================
 
 import type { Metadata } from 'next';
@@ -17,60 +13,51 @@ import Link from 'next/link';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EventList } from '@/components/EventList';
-import { EventFiltersForm } from './EventFiltersForm';
 import { getEvents } from '@/data/events';
-import type { EventCategory, EventStatus } from '@/types/event';
+import { cookies } from 'next/headers';
+import { adminAuth } from '@/lib/firebase/admin';
+import { redirect } from 'next/navigation';
 
 /**
  * Metadata de la página.
  */
 export const metadata: Metadata = {
-  title: 'Explorar Eventos',
-  description: 'Descubre y filtra eventos por categoría, fecha, precio y más.',
+  title: 'Mis Eventos',
+  description: 'Gestiona y administra los eventos que has creado.',
 };
 
 /**
- * Props de la página con searchParams.
- *
- * ## searchParams
- * Next.js pasa los query params de la URL como prop.
- * Por ejemplo: /events?category=conferencia → { category: 'conferencia' }
+ * Página de listado de eventos del usuario.
  */
-interface EventsPageProps {
-  searchParams: Promise<{
-    search?: string;
-    category?: string;
-    status?: string;
-    priceMax?: string;
-  }>;
-}
+export default async function MyEventsPage(): Promise<React.ReactElement> {
+  // Validación de autenticación en el servidor
+  const cookieStore = await cookies();
+  const token = cookieStore.get('firebase-auth-token')?.value;
 
-/**
- * Página de listado de eventos.
- */
-export default async function EventsPage({ searchParams }: EventsPageProps): Promise<React.ReactElement> {
-  // Await searchParams (Next.js 16+ async searchParams)
-  const params = await searchParams;
+  if (!token) {
+    redirect('/auth');
+  }
 
-  // Construimos los filtros desde searchParams
-  const filters = {
-    search: params.search,
-    category: params.category as EventCategory | undefined,
-    status: (params.status as EventStatus | undefined) ?? 'publicado',
-    priceMax: params.priceMax ? Number(params.priceMax) : undefined,
-  };
+  let uid = '';
+  try {
+    const decodedToken = await adminAuth.verifyIdToken(token);
+    uid = decodedToken.uid;
+  } catch (error) {
+    console.error('Error verificando token en Mis Eventos:', error);
+    redirect('/auth');
+  }
 
-  // Fetch de eventos con filtros
-  const events = await getEvents(filters);
+  // Fetch de eventos filtrando únicamente por el ID del organizador
+  const events = await getEvents({ organizerId: uid });
 
   return (
     <div className="container mx-auto px-4 py-8">
       {/* Header */}
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Explorar Eventos</h1>
+          <h1 className="text-3xl font-bold">Mis Eventos</h1>
           <p className="mt-1 text-muted-foreground">
-            {events.length} {events.length === 1 ? 'evento encontrado' : 'eventos encontrados'}
+            {events.length} {events.length === 1 ? 'evento creado' : 'eventos creados'}
           </p>
         </div>
         <Button asChild>
@@ -81,15 +68,10 @@ export default async function EventsPage({ searchParams }: EventsPageProps): Pro
         </Button>
       </div>
 
-      {/* Filtros */}
-      <div className="mb-8">
-        <EventFiltersForm currentFilters={filters} />
-      </div>
-
       {/* Lista de eventos */}
       <EventList
         events={events}
-        emptyMessage="No se encontraron eventos con los filtros seleccionados"
+        emptyMessage="No has creado ningún evento aún."
       />
     </div>
   );

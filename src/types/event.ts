@@ -161,4 +161,5 @@ export interface EventFilters {
   dateFrom?: string;
   dateTo?: string;
   priceMax?: number;
+  organizerId?: string;
 }

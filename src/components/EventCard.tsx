@@ -1,16 +1,10 @@
 // =============================================================================
 // COMPONENTE EVENT CARD - Module 4: Event Pass
 // =============================================================================
-// Tarjeta para mostrar un evento en el listado.
-//
-// ## Server Component
-// Este es un Server Component (por defecto en Next.js App Router).
-// No tiene 'use client' porque no necesita interactividad del cliente.
-// =============================================================================
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { Calendar, MapPin, Users, Tag } from 'lucide-react';
+import { Calendar, MapPin, Users, Tag, Pencil } from 'lucide-react';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -20,25 +14,19 @@ import { formatShortDate, formatPrice, getAvailableSpots } from '@/lib/utils';
 
 interface EventCardProps {
   event: Event;
-  currentUserId?: string;
+  currentUserId?: string; // UID del usuario autenticado (viene del servidor)
 }
 
-/**
- * Tarjeta de evento para listados.
- *
- * ## Diseño
- * - Imagen con overlay de fecha
- * - Información principal (título, ubicación, fecha)
- * - Badges de categoría y estado
- * - Footer con precio y acción
- */
 export function EventCard({ event, currentUserId }: EventCardProps): React.ReactElement {
   const availableSpots = getAvailableSpots(event.capacity, event.registeredCount);
   const isSoldOut = availableSpots === 0;
   const isAvailable = event.status === 'publicado' && !isSoldOut;
+  
+  // Verificación de propiedad (Ownership)
+  const isOwner = currentUserId === event.organizerId;
 
   return (
-    <Card className="overflow-hidden transition-shadow hover:shadow-lg">
+    <Card className="group overflow-hidden transition-all hover:shadow-md border-muted/60">
       {/* Imagen del evento */}
       <div className="relative aspect-video">
         {event.imageUrl ? (
@@ -46,24 +34,38 @@ export function EventCard({ event, currentUserId }: EventCardProps): React.React
             src={event.imageUrl}
             alt={event.title}
             fill
-            className="object-cover"
+            className="object-cover transition-transform duration-300 group-hover:scale-105"
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
           />
         ) : (
-          <div className="flex h-full items-center justify-center bg-muted">
-            <Tag className="h-12 w-12 text-muted-foreground" />
+          <div className="flex h-full items-center justify-center bg-muted/50">
+            <Tag className="h-10 w-10 text-muted-foreground/40" />
+          </div>
+        )}
+
+        {/* Badge de "Mi Evento" si el usuario es el dueño */}
+        {isOwner && (
+          <div className="absolute left-3 bottom-3">
+            <Badge className="bg-primary/90 backdrop-blur-sm border-none shadow-sm">
+              Tu evento
+            </Badge>
           </div>
         )}
 
         {/* Overlay con fecha */}
-        <div className="absolute left-3 top-3 rounded-lg bg-background/90 px-3 py-1.5 backdrop-blur-sm">
-          <p className="text-sm font-semibold">{formatShortDate(event.date)}</p>
+        <div className="absolute left-3 top-3 rounded-lg bg-background/95 px-2.5 py-1 backdrop-blur-sm border shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-tighter">
+            {formatShortDate(event.date)}
+          </p>
         </div>
 
-        {/* Badge de estado si no está publicado */}
+        {/* Badge de estado (solo si no es el flujo normal de publicación) */}
         {event.status !== 'publicado' && (
           <div className="absolute right-3 top-3">
-            <Badge variant={event.status === 'cancelado' ? 'destructive' : 'secondary'}>
+            <Badge 
+              variant={event.status === 'cancelado' ? 'destructive' : 'secondary'}
+              className="shadow-sm"
+            >
               {STATUS_LABELS[event.status]}
             </Badge>
           </div>
@@ -71,55 +73,51 @@ export function EventCard({ event, currentUserId }: EventCardProps): React.React
       </div>
 
       <CardHeader className="pb-2">
-        <div className="flex items-start justify-between gap-2">
+        <div className="flex flex-col gap-2">
+          <Badge variant="outline" className="w-fit text-[10px] uppercase font-bold tracking-widest">
+            {CATEGORY_LABELS[event.category]}
+          </Badge>
           <Link
             href={`/events/${event.id}`}
-            className="line-clamp-2 text-lg font-semibold hover:underline"
+            className="line-clamp-2 text-lg font-bold leading-tight hover:text-primary transition-colors"
           >
             {event.title}
           </Link>
         </div>
-        <Badge variant="outline" className="w-fit">
-          {CATEGORY_LABELS[event.category]}
-        </Badge>
       </CardHeader>
 
-      <CardContent className="space-y-2 pb-2">
-        {/* Ubicación */}
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <MapPin className="h-4 w-4 shrink-0" />
+      <CardContent className="space-y-2.5 pb-4">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
+          <MapPin className="h-4 w-4 shrink-0 text-primary/70" />
           <span className="line-clamp-1">{event.location}</span>
         </div>
 
-        {/* Fecha y hora */}
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Calendar className="h-4 w-4 shrink-0" />
-          <span>{formatShortDate(event.date)}</span>
-        </div>
-
-        {/* Plazas disponibles */}
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Users className="h-4 w-4 shrink-0" />
-          <span>
-            {isSoldOut ? (
-              <span className="font-medium text-destructive">Agotado</span>
-            ) : (
-              `${availableSpots} plazas disponibles`
-            )}
+        <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
+          <Users className="h-4 w-4 shrink-0 text-primary/70" />
+          <span className={isSoldOut ? "text-destructive font-bold" : ""}>
+            {isSoldOut ? "Agotado" : `${availableSpots} lugares libres`}
           </span>
         </div>
       </CardContent>
 
-      <CardFooter className="flex items-center justify-between">
-        <p className="text-lg font-bold text-primary">{formatPrice(event.price)}</p>
+      <CardFooter className="flex items-center justify-between border-t bg-muted/5 py-3">
+        <p className="text-xl font-black text-primary">{formatPrice(event.price)}</p>
+        
         <div className="flex gap-2">
-          {currentUserId && currentUserId === event.organizerId && (
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/events/${event.id}/edit`}>Editar</Link>
+          {/* Acción exclusiva del Dueño */}
+          {isOwner && (
+            <Button asChild variant="outline" size="sm" className="h-8 border-primary/20 hover:bg-primary/5">
+              <Link href={`/events/${event.id}/edit`}>
+                <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                Editar
+              </Link>
             </Button>
           )}
-          <Button asChild variant={isAvailable ? 'default' : 'secondary'} size="sm">
-            <Link href={`/events/${event.id}`}>{isAvailable ? 'Ver detalles' : 'Ver evento'}</Link>
+
+          <Button asChild variant={isAvailable ? 'default' : 'secondary'} size="sm" className="h-8 font-semibold">
+            <Link href={`/events/${event.id}`}>
+              {isAvailable ? 'Ver más' : 'Detalles'}
+            </Link>
           </Button>
         </div>
       </CardFooter>
